@@ -9,13 +9,15 @@ const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
 dotenv.config();
 const app = express();
-app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://local-service-project-frontend.vercel.app"
-  ],
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://local-service-project-frontend.vercel.app",
+    ],
+    credentials: true,
+  })
+);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -44,11 +46,9 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 // --- AUTH MIDDLEWARE ---
 
-
 app.get("/", (req, res) => {
   res.send("Backend is running ✅");
 });
-
 
 app.get("/me", (req, res) => {
   try {
@@ -72,7 +72,6 @@ app.post("/logout", (req, res) => {
   });
   res.json({ message: "Logged out successfully" });
 });
-
 
 // Signup route
 app.post("/customer/signup", async (req, res) => {
@@ -122,7 +121,12 @@ app.post("/customer/verify-otp", async (req, res) => {
 
       // ✅ Create JWT token
       const token = jwt.sign(
-        { fullName: user.fullName, email: user.email, username: user.username, role: user.role },
+        {
+          fullName: user.fullName,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+        },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
       );
@@ -130,9 +134,9 @@ app.post("/customer/verify-otp", async (req, res) => {
       // ✅ Set token in cookie
       res.cookie("token", token, {
         httpOnly: true, // not accessible by JS (secure)
-        secure: false,  // change to true in production (https)
+        secure: false, // change to true in production (https)
         sameSite: "lax",
-        maxAge: 24 * 60 * 60 * 1000,// 1 days
+        maxAge: 24 * 60 * 60 * 1000, // 1 days
       });
 
       // ✅ Send user info + token to frontend (optional)
@@ -170,20 +174,27 @@ app.post("/customer/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid password" });
     }
     if (!user.verified) {
-      return res.status(400).json({ message: "Please verify your email first" });
+      return res
+        .status(400)
+        .json({ message: "Please verify your email first" });
     }
     const token = jwt.sign(
-      {fullName: user.fullName, email: user.email, username: user.username, role: user.role },
+      {
+        fullName: user.fullName,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
     // ✅ Set token in cookie
     res.cookie("token", token, {
-      httpOnly: true, // JS cannot access cookie
-      secure: false,  // set true in production (https)
-      sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000,// 1 days
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // ✅ true in Vercel
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // ✅ required for cross-origin
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
 
     // ✅ Send user info (optional)
@@ -197,7 +208,6 @@ app.post("/customer/login", async (req, res) => {
       },
       token, // optional if frontend wants token in JSON too
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -251,7 +261,12 @@ app.post("/service/verify-otp", async (req, res) => {
 
       // ✅ Create JWT token
       const token = jwt.sign(
-        { fullName: user.fullName, email: user.email, username: user.username, role: user.role },
+        {
+          fullName: user.fullName,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+        },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
       );
@@ -259,9 +274,9 @@ app.post("/service/verify-otp", async (req, res) => {
       // ✅ Set token in cookie
       res.cookie("token", token, {
         httpOnly: true, // not accessible by JS (secure)
-        secure: false,  // change to true in production (https)
+        secure: false, // change to true in production (https)
         sameSite: "lax",
-        maxAge: 24 * 60 * 60 * 1000,// 1 days
+        maxAge: 24 * 60 * 60 * 1000, // 1 days
       });
 
       // ✅ Send user info + token to frontend (optional)
@@ -298,10 +313,17 @@ app.post("/service/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid password" });
     }
     if (!user.verified) {
-      return res.status(400).json({ message: "Please verify your email first" });
+      return res
+        .status(400)
+        .json({ message: "Please verify your email first" });
     }
     const token = jwt.sign(
-      {fullName: user.fullName, email: user.email, username: user.username, role: user.role },
+      {
+        fullName: user.fullName,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
@@ -309,9 +331,9 @@ app.post("/service/login", async (req, res) => {
     // ✅ Set token in cookie
     res.cookie("token", token, {
       httpOnly: true, // JS cannot access cookie
-      secure: false,  // set true in production (https)
+      secure: false, // set true in production (https)
       sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000,// 1 days
+      maxAge: 24 * 60 * 60 * 1000, // 1 days
     });
 
     // ✅ Send user info (optional)
@@ -325,7 +347,6 @@ app.post("/service/login", async (req, res) => {
       },
       token, // optional if frontend wants token in JSON too
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -359,9 +380,9 @@ app.post("/admin/login", async (req, res) => {
 
     // ✅ Cookie me save karna
     res.cookie("token", token, {
-      httpOnly: true,       // JS se access nahi hoga
-      secure: false,        // localhost test ke liye, production me true
-      sameSite: "lax",      // CORS handling
+      httpOnly: true, // JS se access nahi hoga
+      secure: false, // localhost test ke liye, production me true
+      sameSite: "lax", // CORS handling
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
 
@@ -680,10 +701,12 @@ app.get("/admin/service/approve/", async (req, res) => {
     // Fetch all services sorted by latest
     const services = await ServiceAdd.find().sort({ _id: -1 });
 
-    const formattedServices = services.map(s => {
+    const formattedServices = services.map((s) => {
       let imageBase64 = null;
       if (s.image?.data) {
-        imageBase64 = `data:${s.image.contentType};base64,${s.image.data.toString("base64")}`;
+        imageBase64 = `data:${
+          s.image.contentType
+        };base64,${s.image.data.toString("base64")}`;
       }
 
       return {
@@ -712,7 +735,6 @@ app.put("/admin/service/approve/button/update/:id", async (req, res) => {
     res.status(500).json({ message: "Server Error", error: err.message });
   }
 });
-
 
 app.get("/admin/bookings", async (req, res) => {
   try {
@@ -784,7 +806,11 @@ app.put("/admin/users/:id/block", async (req, res) => {
     const { block } = req.body;
     const { id } = req.params;
 
-    let user = await CustomerLogin.findByIdAndUpdate(id, { block }, { new: true });
+    let user = await CustomerLogin.findByIdAndUpdate(
+      id,
+      { block },
+      { new: true }
+    );
     if (!user) {
       user = await ServiceLogin.findByIdAndUpdate(id, { block }, { new: true });
     }
