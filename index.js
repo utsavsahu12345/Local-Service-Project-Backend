@@ -42,6 +42,13 @@ const transporter = nodemailer.createTransport({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 // --- AUTH MIDDLEWARE ---
+
+
+app.get("/", (req, res) => {
+  res.send("Backend is running ✅");
+});
+
+
 app.get("/me", (req, res) => {
   try {
     const token = req.cookies.token; // ✅ httpOnly cookie
