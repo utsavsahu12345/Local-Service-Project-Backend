@@ -11,11 +11,13 @@ dotenv.config();
 const app = express();
 app.use(cors({
   origin: [
-    "http://localhost:5173",  // for local testing
-    "https://local-service-project-frontend.vercel.app" // your deployed frontend
+    "http://localhost:5173",
+    "https://local-service-project-frontend.vercel.app",
+    "https://local-service-project-frontend-k2rjz0vcd-utsav-sahus-projects.vercel.app"
   ],
   credentials: true,
 }));
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
