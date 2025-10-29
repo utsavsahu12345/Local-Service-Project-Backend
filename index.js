@@ -73,6 +73,64 @@ app.post("/logout", (req, res) => {
   res.json({ message: "Logged out successfully" });
 });
 
+app.post("/service/add", upload.single("image"), async (req, res) => {
+  try {
+    const {
+      username,
+      name,
+      phone,
+      service,
+      experience,
+      description,
+      location,
+      visitingPrice,
+      maxPrice,
+      status,
+      approve,
+    } = req.body;
+
+    // ✅ Validate fields
+    if (
+      !username ||
+      !name ||
+      !phone ||
+      !service ||
+      !experience ||
+      !description ||
+      !location ||
+      !visitingPrice ||
+      !maxPrice
+    ) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    // ✅ Image file handle
+    const image = req.file ? req.file.filename : null;
+
+    // ✅ Create new record
+    const newService = new ServiceAdd({
+      username,
+      name,
+      phone,
+      service,
+      experience,
+      description,
+      location,
+      visitingPrice,
+      maxPrice,
+      status,
+      approve,
+      image,
+    });
+
+    await newService.save();
+    res.status(201).json({ message: "Service added successfully!" });
+  } catch (error) {
+    console.error("Error in addService:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Signup route
 app.post("/customer/signup", async (req, res) => {
   const { fullName, username, email, password } = req.body;
