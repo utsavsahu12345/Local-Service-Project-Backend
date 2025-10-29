@@ -133,14 +133,12 @@ app.post("/service/add", upload.single("image"), async (req, res) => {
 
 // Signup route
 app.post("/customer/signup", async (req, res) => {
-  const { fullName, username, email, password } = req.body;
+  const { fullName, username, email, password, gender, location } = req.body;
 
-  // Check if user exists
   const existingUser = await CustomerLogin.findOne({ email });
   if (existingUser)
     return res.status(400).json({ message: "Email already exists" });
 
-  // Generate OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
   const newUser = new CustomerLogin({
@@ -148,11 +146,13 @@ app.post("/customer/signup", async (req, res) => {
     username,
     email,
     password,
+    gender,
+    location,
     otp,
   });
+
   await newUser.save();
 
-  // Send OTP via email
   await transporter.sendMail({
     from: process.env.EMAIL,
     to: email,
@@ -162,6 +162,7 @@ app.post("/customer/signup", async (req, res) => {
 
   res.json({ message: "OTP sent to email", userId: newUser._id });
 });
+
 
 // Verify OTP route
 app.post("/customer/verify-otp", async (req, res) => {
@@ -172,41 +173,42 @@ app.post("/customer/verify-otp", async (req, res) => {
     if (!user) return res.status(400).json({ message: "User not found" });
 
     if (user.otp === otp) {
-      // ✅ Mark user as verified and remove OTP
       user.verified = true;
       user.otp = null;
       await user.save();
 
-      // ✅ Create JWT token
+      // Include gender & location in JWT
       const token = jwt.sign(
         {
           fullName: user.fullName,
           email: user.email,
           username: user.username,
+          gender: user.gender,
+          location: user.location,
           role: user.role,
         },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
       );
 
-      // ✅ Set token in cookie
       res.cookie("token", token, {
-        httpOnly: true, // not accessible by JS (secure)
-        secure: false, // change to true in production (https)
-        sameSite: "lax",
-        maxAge: 24 * 60 * 60 * 1000, // 1 days
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        maxAge: 24 * 60 * 60 * 1000,
       });
 
-      // ✅ Send user info + token to frontend (optional)
-      return res.json({
+      res.json({
         message: "Email verified successfully",
         user: {
           fullName: user.fullName,
           username: user.username,
           email: user.email,
+          gender: user.gender,
+          location: user.location,
           role: user.role,
         },
-        token, // optional if frontend wants it too
+        token,
       });
     } else {
       return res.status(400).json({ message: "Invalid OTP" });
@@ -217,54 +219,51 @@ app.post("/customer/verify-otp", async (req, res) => {
   }
 });
 
+
 app.post("/customer/login", async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    // find by email or username
     const user = await CustomerLogin.findOne({
-      $or: [{ username: username }, { email: username }],
+      $or: [{ username }, { email: username }],
     });
-    if (!user) {
-      return res.status(400).json({ message: "User not found" });
-    }
-    if (user.password !== password) {
+    if (!user) return res.status(400).json({ message: "User not found" });
+    if (user.password !== password)
       return res.status(400).json({ message: "Invalid password" });
-    }
-    if (!user.verified) {
-      return res
-        .status(400)
-        .json({ message: "Please verify your email first" });
-    }
+    if (!user.verified)
+      return res.status(400).json({ message: "Please verify your email first" });
+
     const token = jwt.sign(
       {
         fullName: user.fullName,
         email: user.email,
         username: user.username,
+        gender: user.gender,
+        location: user.location,
         role: user.role,
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    // ✅ Set token in cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // ✅ true in Vercel
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // ✅ required for cross-origin
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send user info (optional)
     res.json({
       message: "Login successful",
       user: {
         fullName: user.fullName,
         username: user.username,
         email: user.email,
+        gender: user.gender,
+        location: user.location,
         role: user.role,
       },
-      token, // optional if frontend wants token in JSON too
+      token,
     });
   } catch (err) {
     console.error(err);
@@ -273,35 +272,44 @@ app.post("/customer/login", async (req, res) => {
 });
 
 app.post("/service/signup", async (req, res) => {
-  const { fullName, username, email, password } = req.body;
+  const { fullName, username, email, password, gender, location } = req.body;
 
-  // Check if user exists
-  const existingUser = await ServiceLogin.findOne({ email });
-  if (existingUser)
-    return res.status(400).json({ message: "Email already exists" });
+  try {
+    // Check if user already exists
+    const existingUser = await ServiceLogin.findOne({ email });
+    if (existingUser)
+      return res.status(400).json({ message: "Email already exists" });
 
-  // Generate OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  const newUser = new ServiceLogin({
-    fullName,
-    username,
-    email,
-    password,
-    otp,
-  });
-  await newUser.save();
+    const newUser = new ServiceLogin({
+      fullName,
+      username,
+      email,
+      password,
+      gender,
+      location,
+      otp,
+    });
 
-  // Send OTP via email
-  await transporter.sendMail({
-    from: process.env.EMAIL,
-    to: email,
-    subject: "Email Verification OTP",
-    text: `Your OTP is: ${otp}`,
-  });
+    await newUser.save();
 
-  res.json({ message: "OTP sent to email", userId: newUser._id });
+    // Send OTP via email
+    await transporter.sendMail({
+      from: process.env.EMAIL,
+      to: email,
+      subject: "Email Verification OTP",
+      text: `Your OTP is: ${otp}`,
+    });
+
+    res.json({ message: "OTP sent to email", userId: newUser._id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
+
 
 // Verify OTP route
 app.post("/service/verify-otp", async (req, res) => {
@@ -312,41 +320,42 @@ app.post("/service/verify-otp", async (req, res) => {
     if (!user) return res.status(400).json({ message: "User not found" });
 
     if (user.otp === otp) {
-      // ✅ Mark user as verified and remove OTP
       user.verified = true;
       user.otp = null;
       await user.save();
 
-      // ✅ Create JWT token
+      // Include gender & location in JWT
       const token = jwt.sign(
         {
           fullName: user.fullName,
           email: user.email,
           username: user.username,
+          gender: user.gender,
+          location: user.location,
           role: user.role,
         },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
       );
 
-      // ✅ Set token in cookie
       res.cookie("token", token, {
-        httpOnly: true, // not accessible by JS (secure)
-        secure: false, // change to true in production (https)
-        sameSite: "lax",
-        maxAge: 24 * 60 * 60 * 1000, // 1 days
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        maxAge: 24 * 60 * 60 * 1000,
       });
 
-      // ✅ Send user info + token to frontend (optional)
-      return res.json({
+      res.json({
         message: "Email verified successfully",
         user: {
           fullName: user.fullName,
           username: user.username,
           email: user.email,
+          gender: user.gender,
+          location: user.location,
           role: user.role,
         },
-        token, // optional if frontend wants it too
+        token,
       });
     } else {
       return res.status(400).json({ message: "Invalid OTP" });
@@ -357,53 +366,51 @@ app.post("/service/verify-otp", async (req, res) => {
   }
 });
 
+
 app.post("/service/login", async (req, res) => {
   const { username, password } = req.body;
 
   try {
     const user = await ServiceLogin.findOne({
-      $or: [{ username: username }, { email: username }],
+      $or: [{ username }, { email: username }],
     });
-    if (!user) {
-      return res.status(400).json({ message: "User not found" });
-    }
-    if (user.password !== password) {
+    if (!user) return res.status(400).json({ message: "User not found" });
+    if (user.password !== password)
       return res.status(400).json({ message: "Invalid password" });
-    }
-    if (!user.verified) {
-      return res
-        .status(400)
-        .json({ message: "Please verify your email first" });
-    }
+    if (!user.verified)
+      return res.status(400).json({ message: "Please verify your email first" });
+
     const token = jwt.sign(
       {
         fullName: user.fullName,
         email: user.email,
         username: user.username,
+        gender: user.gender,
+        location: user.location,
         role: user.role,
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    // ✅ Set token in cookie
     res.cookie("token", token, {
-      httpOnly: true, // JS cannot access cookie
-      secure: false, // set true in production (https)
-      sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 1 days
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send user info (optional)
     res.json({
       message: "Login successful",
       user: {
         fullName: user.fullName,
         username: user.username,
         email: user.email,
+        gender: user.gender,
+        location: user.location,
         role: user.role,
       },
-      token, // optional if frontend wants token in JSON too
+      token,
     });
   } catch (err) {
     console.error(err);
