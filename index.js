@@ -86,28 +86,11 @@ app.post("/service/add", upload.single("image"), async (req, res) => {
       visitingPrice,
       maxPrice,
       status,
-      approve,
     } = req.body;
 
-    // ✅ Validate fields
-    if (
-      !username ||
-      !name ||
-      !phone ||
-      !service ||
-      !experience ||
-      !description ||
-      !location ||
-      !visitingPrice ||
-      !maxPrice
-    ) {
-      return res.status(400).json({ error: "All fields are required" });
+    if (!req.file) {
+      return res.status(400).json({ error: "Image is required" });
     }
-
-    // ✅ Image file handle
-    const image = req.file ? req.file.filename : null;
-
-    // ✅ Create new record
     const newService = new ServiceAdd({
       username,
       name,
@@ -118,16 +101,16 @@ app.post("/service/add", upload.single("image"), async (req, res) => {
       location,
       visitingPrice,
       maxPrice,
-      status,
-      approve,
-      image,
+      status: status?.toLowerCase(), // convert to lowercase
+      image: {
+        data: req.file.buffer,
+        contentType: req.file.mimetype,
+      },
     });
-
     await newService.save();
-    res.status(201).json({ message: "Service added successfully!" });
-  } catch (error) {
-    console.error("Error in addService:", error);
-    res.status(500).json({ error: error.message });
+    res.json({ message: "Service added successfully", service: newService });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -690,6 +673,17 @@ app.post("/booking/verify-otp/:id", async (req, res) => {
   }
 });
 
+app.get("/service/booking/data/:providerusername", async (req, res) => {
+  try {
+    const bookings = await Booking.find({
+      providerusername: req.params.providerusername,
+    });
+    res.json(bookings);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 app.get("/feedback/", async (req, res) => {
   const { customerusername, status } = req.query;
   const filter = {};
@@ -716,17 +710,6 @@ app.post("/feedback/submit/", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
-  }
-});
-
-app.get("/service/booking/data/:providerusername", async (req, res) => {
-  try {
-    const bookings = await Booking.find({
-      providerusername: req.params.providerusername,
-    });
-    res.json(bookings);
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
   }
 });
 
