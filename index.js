@@ -62,6 +62,69 @@ app.get("/me", (req, res) => {
   }
 });
 
+app.post("/login", async (req, res) => {
+  const { username, password, role } = req.body;
+
+  try {
+    if (!role) return res.status(400).json({ message: "Please select a role" });
+
+    // 🔍 Select collection based on role
+    const Model = role === "customer" ? CustomerLogin : ServiceLogin;
+
+    // 🔎 Find user by username or email
+    const user = await Model.findOne({
+      $or: [{ username }, { email: username }],
+    });
+
+    if (!user) return res.status(400).json({ message: "User not found" });
+
+    if (user.password !== password)
+      return res.status(400).json({ message: "Invalid password" });
+
+    if (!user.verified)
+      return res.status(400).json({ message: "Please verify your email first" });
+
+    // 🪪 Generate JWT token
+    const token = jwt.sign(
+      {
+        fullName: user.fullName,
+        email: user.email,
+        username: user.username,
+        gender: user.gender,
+        location: user.location,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    // 🍪 Set Cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    // ✅ Send Response
+    res.json({
+      message: "Login successful",
+      user: {
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        gender: user.gender,
+        location: user.location,
+        role: user.role,
+      },
+      token,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // logout.js or in main server file
 app.post("/logout", (req, res) => {
   res.cookie("token", "", {
