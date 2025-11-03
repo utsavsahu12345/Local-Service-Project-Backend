@@ -8,7 +8,11 @@ const bookingSchema = new mongoose.Schema({
   customerphone: { type: Number, required: true },
   customerdate: { type: Date, required: true },
   customerdescription: { type: String, required: true },
-  status: { type: String, enum: ["pending","confirm","completed","rejected","cancel"], default: "pending" },
+  status: {
+    type: String,
+    enum: ["pending", "confirm", "completed", "rejected", "cancel"],
+    default: "pending",
+  },
   providerusername: { type: String, required: true },
   providername: { type: String, required: true },
   providerphone: { type: Number, required: true },
@@ -25,7 +29,7 @@ const bookingSchema = new mongoose.Schema({
   feedback: { type: String },
   feedbackStatus: { type: Boolean, default: false },
   otp: { type: String }, // store OTP temporarily
-  otpExpires: { type: Date }, 
+  otpExpires: { type: Date },
 });
 
 module.exports = mongoose.model("Booking", bookingSchema);
