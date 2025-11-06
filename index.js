@@ -23,11 +23,11 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-const CustomerLogin = require("./Mongodb/CustomerLogin");
-const ServiceLogin = require("./Mongodb/ServiceLogin");
+
 const ServiceAdd = require("./Mongodb/ServiceAdd");
 const Booking = require("./Mongodb/Booking");
 const AdminUser = require("./Mongodb/AdminLogin");
+const User = require("./Mongodb/User");
 
 mongoose
   .connect(process.env.MONGO_URI)
@@ -50,6 +50,69 @@ app.get("/", (req, res) => {
   res.send("Backend is running ✅");
 });
 
+
+app.get("/book/service/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    const bookings = await Booking.find({ customerusername: username });
+    if (!bookings.length)
+      return res.status(404).json({ message: "No bookings found" });
+
+    // Convert image buffer to base64
+    const formatted = bookings.map((b) => ({
+      ...b._doc,
+      image: {
+        data: b.image?.data?.toString("base64"),
+        contentType: b.image?.contentType,
+      },
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error("Error fetching bookings:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+// Cancel Booking API
+app.put("/book/service/:id/cancel", async (req, res) => {
+  try {
+    const booking = await Booking.findByIdAndUpdate(
+      req.params.id,
+      { status: "cancel" },
+      { new: true }
+    );
+    res.json({ message: "Booking cancelled", booking });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Submit feedback
+app.post("/book/service/:id/feedback", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { feedback } = req.body;
+
+    if (!feedback.trim())
+      return res.status(400).json({ message: "Feedback cannot be empty" });
+
+    const booking = await Booking.findById(id);
+    if (!booking)
+      return res.status(404).json({ message: "Booking not found" });
+
+    booking.feedback = feedback;
+    booking.feedbackStatus = true;
+    await booking.save();
+
+    res.json({ message: "Feedback submitted successfully" });
+  } catch (err) {
+    console.error("Error submitting feedback:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
 app.get("/me", (req, res) => {
   try {
     const token = req.cookies.token; // ✅ httpOnly cookie
@@ -63,30 +126,28 @@ app.get("/me", (req, res) => {
 });
 
 app.post("/login", async (req, res) => {
-  const { username, password, role } = req.body;
-
+  const { username, password } = req.body;  
   try {
-    if (!role) return res.status(400).json({ message: "Please select a role" });
-
-    // 🔍 Select collection based on role
-    const Model = role === "customer" ? CustomerLogin : ServiceLogin;
-
-    // 🔎 Find user by username or email
-    const user = await Model.findOne({
+    // 🔍 Find user by username or email
+    const user = await User.findOne({
       $or: [{ username }, { email: username }],
     });
-
-    if (!user) return res.status(400).json({ message: "User not found" });
-
-    if (user.password !== password)
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+    if (user.block) {
+      return res
+        .status(403)
+        .json({ message: "Your account is blocked. Please contact support." });
+    }
+    // 🔒 Compare password (plain for now)
+    if (user.password !== password) {
       return res.status(400).json({ message: "Invalid password" });
-
-    if (!user.verified)
-      return res.status(400).json({ message: "Please verify your email first" });
-
-    // 🪪 Generate JWT token
+    }
+    // ✅ Create JWT token
     const token = jwt.sign(
       {
+        id: user._id,
         fullName: user.fullName,
         email: user.email,
         username: user.username,
@@ -97,30 +158,122 @@ app.post("/login", async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
-
-    // 🍪 Set Cookie
+    // ✅ Set token in cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production", // true only in production
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
-
-    // ✅ Send Response
-    res.json({
-      message: "Login successful",
-      user: {
-        fullName: user.fullName,
-        username: user.username,
-        email: user.email,
-        gender: user.gender,
-        location: user.location,
-        role: user.role,
-      },
-      token,
+    // ✅ Send success response
+    return res.status(200).json({
+      message: "Login successful!",
+      role: user.role,
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Login error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.post("/signup", async (req, res) => {
+  try {
+    const { fullName, username, email, password, gender, location } = req.body;
+
+    // Check existing user
+    const existingUser = await User.findOne({ email });
+    if (existingUser)
+      return res.status(400).json({ message: "Email already exists" });
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Create user
+    const newUser = new User({
+      fullName,
+      username,
+      email,
+      password,
+      gender,
+      location,
+      otp,
+      verified: false,
+      role: "Customer",
+    });
+
+    await newUser.save();
+
+    // Send OTP mail
+    await transporter.sendMail({
+      from: process.env.EMAIL,
+      to: email,
+      subject: "Email Verification OTP",
+      text: `Your OTP is: ${otp}`,
+    });
+
+    res.json({ message: "OTP sent to email", userId: newUser._id });
+  } catch (error) {
+    console.error("Signup Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ==================== VERIFY CUSTOMER OTP ====================
+app.post("/signup/verify-otp", async (req, res) => {
+  const { userId, otp } = req.body;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(400).json({ message: "User not found" });
+
+    if (user.otp === otp) {
+      user.verified = true;
+      user.otp = null;
+      await user.save();
+
+      // Create JWT token
+      const token = jwt.sign(
+        {
+          id: user._id,
+          fullName: user.fullName,
+          username: user.username,
+          email: user.email,
+          gender: user.gender,
+          location: user.location,
+          role: user.role,
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: "1d" }
+      );
+
+      // Set token in cookies
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        maxAge: 24 * 60 * 60 * 1000,
+      });
+
+      res.json({
+        message: "Email verified successfully",
+        user: {
+          fullName: user.fullName,
+          username: user.username,
+          email: user.email,
+          gender: user.gender,
+          location: user.location,
+          role: user.role,
+        },
+        token,
+      });
+    } else {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+  } catch (err) {
+    console.error("OTP Verify Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -181,13 +334,13 @@ app.post("/service/add", upload.single("image"), async (req, res) => {
 app.post("/customer/signup", async (req, res) => {
   const { fullName, username, email, password, gender, location } = req.body;
 
-  const existingUser = await CustomerLogin.findOne({ email });
+  const existingUser = await User.findOne({ email });
   if (existingUser)
     return res.status(400).json({ message: "Email already exists" });
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  const newUser = new CustomerLogin({
+  const newUser = new User({
     fullName,
     username,
     email,
@@ -213,9 +366,8 @@ app.post("/customer/signup", async (req, res) => {
 // Verify OTP route
 app.post("/customer/verify-otp", async (req, res) => {
   const { userId, otp } = req.body;
-
   try {
-    const user = await CustomerLogin.findById(userId);
+    const user = await User.findById(userId);
     if (!user) return res.status(400).json({ message: "User not found" });
 
     if (user.otp === otp) {
@@ -270,15 +422,24 @@ app.post("/customer/login", async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    const user = await CustomerLogin.findOne({
+    const user = await User.findOne({
       $or: [{ username }, { email: username }],
     });
+
     if (!user) return res.status(400).json({ message: "User not found" });
+
+    // ✅ Role check
+    if (user.role !== "Customer") {
+      return res.status(403).json({ message: "Access denied. Only customers can login." });
+    }
+
     if (user.password !== password)
       return res.status(400).json({ message: "Invalid password" });
+
     if (!user.verified)
       return res.status(400).json({ message: "Please verify your email first" });
 
+    // ✅ Create JWT Token
     const token = jwt.sign(
       {
         fullName: user.fullName,
@@ -292,6 +453,7 @@ app.post("/customer/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
+    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -299,6 +461,7 @@ app.post("/customer/login", async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
+    // ✅ Response
     res.json({
       message: "Login successful",
       user: {
@@ -317,19 +480,20 @@ app.post("/customer/login", async (req, res) => {
   }
 });
 
+
 app.post("/service/signup", async (req, res) => {
   const { fullName, username, email, password, gender, location } = req.body;
 
   try {
     // Check if user already exists
-    const existingUser = await ServiceLogin.findOne({ email });
+    const existingUser = await User.findOne({ email });
     if (existingUser)
       return res.status(400).json({ message: "Email already exists" });
 
     // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    const newUser = new ServiceLogin({
+    const newUser = new User({
       fullName,
       username,
       email,
@@ -362,7 +526,7 @@ app.post("/service/verify-otp", async (req, res) => {
   const { userId, otp } = req.body;
 
   try {
-    const user = await ServiceLogin.findById(userId);
+    const user = await User.findById(userId);
     if (!user) return res.status(400).json({ message: "User not found" });
 
     if (user.otp === otp) {
@@ -417,15 +581,24 @@ app.post("/service/login", async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    const user = await ServiceLogin.findOne({
+    const user = await User.findOne({
       $or: [{ username }, { email: username }],
     });
+
     if (!user) return res.status(400).json({ message: "User not found" });
+
+    // ✅ Role check — only service providers can login
+    if (user.role !== "Service Provider") {
+      return res.status(403).json({ message: "Access denied. Only service providers can login." });
+    }
+
     if (user.password !== password)
       return res.status(400).json({ message: "Invalid password" });
+
     if (!user.verified)
       return res.status(400).json({ message: "Please verify your email first" });
 
+    // ✅ Generate JWT Token
     const token = jwt.sign(
       {
         fullName: user.fullName,
@@ -439,6 +612,7 @@ app.post("/service/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
+    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -446,6 +620,7 @@ app.post("/service/login", async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
+    // ✅ Send Response
     res.json({
       message: "Login successful",
       user: {
@@ -459,10 +634,11 @@ app.post("/service/login", async (req, res) => {
       token,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Login error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 app.post("/admin/login", async (req, res) => {
   try {
