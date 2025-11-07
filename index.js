@@ -74,7 +74,7 @@ app.get("/book/service/:username", async (req, res) => {
   }
 });
 // Cancel Booking API
-app.put("/book/service/:id/cancel", async (req, res) => {
+app.put("/booking/:id/cancel", async (req, res) => {
   try {
     const booking = await Booking.findByIdAndUpdate(
       req.params.id,
@@ -782,41 +782,6 @@ app.post("/customer/booking/completed", async (req, res) => {
   } catch (err) {
     console.error("Booking Error:", err);
     res.status(500).json({ error: "Error saving booking" });
-  }
-});
-
-app.get("/customer/bookings", async (req, res) => {
-  try {
-    const { customerusername } = req.query;
-    let query = {};
-
-    if (customerusername) {
-      query.customerusername = customerusername; // Filter by username
-    }
-
-    const bookings = await Booking.find(query);
-    res.status(200).json(bookings);
-  } catch (err) {
-    console.error("Error fetching bookings:", err);
-    res.status(500).json({ error: "Error fetching bookings" });
-  }
-});
-
-// PUT: Cancel Booking
-app.put("/customer/booking/cancel/:id/status", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body; // Expected: { status: "Cancelled" }
-
-    const booking = await Booking.findById(id);
-    if (!booking) return res.status(404).json({ message: "Booking not found" });
-    booking.status = status;
-    await booking.save();
-
-    res.json({ message: "Booking cancelled successfully", booking });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
   }
 });
 
