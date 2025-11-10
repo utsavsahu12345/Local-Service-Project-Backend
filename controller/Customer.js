@@ -135,12 +135,8 @@ const BookingCancel = async (req, res) => {
 const getPopularServices = async (req, res) => {
   try {
     const services = await ServiceAdd.aggregate([
-      {
-        $match: { status: "active", approve: "approve" }
-      },
-      {
-        $sample: { size: 3 } // 🔥 Random 3 documents
-      },
+      { $match: { status: "active", approve: "approve" } },
+      { $sample: { size: 3 } },
       {
         $project: {
           username: 1,
@@ -152,12 +148,29 @@ const getPopularServices = async (req, res) => {
           location: 1,
           visitingPrice: 1,
           maxPrice: 1,
-          image: 1
+          image: 1,
+        },
+      },
+    ]);
+    const formatted = services.map((s) => {
+      let imageBase64 = null;
+      if (s.image && s.image.data) {
+        try {
+          imageBase64 = `data:${
+            s.image.contentType || "image/jpeg"
+          };base64,${s.image.data.toString("base64")}`;
+        } catch (err) {
+          console.error("Error converting image for service:", s._id, err);
         }
       }
-    ]);
 
-    res.status(200).json(services);
+      return {
+        ...s,
+        image: imageBase64,
+      };
+    });
+
+    res.status(200).json(formatted);
   } catch (err) {
     console.error("Error fetching popular services:", err);
     res.status(500).json({ message: "Failed to fetch popular services" });
