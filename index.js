@@ -13,21 +13,10 @@ dotenv.config();
 const app = express();
 
 // ------------------- CORS SETUP -------------------
-const allowedOrigins = [
-  "http://localhost:5173",
-  "https://local-service-project-frontend-git-main-utsav-sahus-projects.vercel.app"
-];
 
-// Global CORS middleware (handles preflight OPTIONS automatically)
 app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true); // Postman / server-to-server requests
-    if (!allowedOrigins.includes(origin)) {
-      return callback(new Error("CORS not allowed for this origin"), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true
+  origin: true, 
+  credentials: true,
 }));
 
 // ------------------- MIDDLEWARE -------------------
@@ -83,7 +72,7 @@ app.get("/me", (req, res) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     res.json({ message: "User data fetched", payload });
   } catch (err) {
-    res.status(401).json({ message: "Invalid token" });
+    return res.status(401).json({ message: "Invalid or expired token" });
   }
 });
 
@@ -94,15 +83,12 @@ app.post("/login", async (req, res) => {
     const user = await User.findOne({
       $or: [{ username }, { email: username }],
     });
-
     if (!user) return res.status(400).json({ message: "User not found" });
     if (user.block) return res.status(403).json({ message: "Your account is blocked." });
 
-    // ------------------- Password Check -------------------
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ message: "Invalid password" });
 
-    // ------------------- JWT TOKEN -------------------
     const token = jwt.sign(
       {
         id: user._id,
@@ -117,12 +103,11 @@ app.post("/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    // ------------------- Set Cookie -------------------
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
     return res.status(200).json({
@@ -157,10 +142,7 @@ app.post("/signup", async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ message: "Email already exists" });
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const newUser = new User({
@@ -177,7 +159,6 @@ app.post("/signup", async (req, res) => {
 
     await newUser.save();
 
-    // Send OTP email
     await transporter.sendMail({
       from: process.env.EMAIL,
       to: email,
@@ -195,7 +176,6 @@ app.post("/signup", async (req, res) => {
 // ------------------- VERIFY OTP -------------------
 app.post("/signup/verify-otp", async (req, res) => {
   const { userId, otp } = req.body;
-
   try {
     const user = await User.findById(userId);
     if (!user) return res.status(400).json({ message: "User not found" });
