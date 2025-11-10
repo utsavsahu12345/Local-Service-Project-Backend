@@ -30,10 +30,11 @@ app.use(cors({
 }));
 
 // Handle OPTIONS preflight requests
-app.options("*", cors({
+app.options("/*", cors({
   origin: allowedOrigins,
   credentials: true
 }));
+
 
 // ------------------- MIDDLEWARE -------------------
 app.use(express.json({ limit: "10mb" }));
