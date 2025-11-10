@@ -76,18 +76,20 @@ app.get("/me", (req, res) => {
   }
 });
 
-// ------------------- LOGIN -------------------
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   try {
     const user = await User.findOne({
       $or: [{ username }, { email: username }],
     });
+
     if (!user) return res.status(400).json({ message: "User not found" });
     if (user.block) return res.status(403).json({ message: "Your account is blocked." });
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(400).json({ message: "Invalid password" });
+    // Compare plain text password
+    if (user.password !== password) {
+      return res.status(400).json({ message: "Invalid password" });
+    }
 
     const token = jwt.sign(
       {
@@ -142,14 +144,14 @@ app.post("/signup", async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ message: "Email already exists" });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // No bcrypt hash
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const newUser = new User({
       fullName,
       username,
       email,
-      password: hashedPassword,
+      password,   // <-- store as plain text
       gender,
       location,
       otp,
@@ -159,6 +161,7 @@ app.post("/signup", async (req, res) => {
 
     await newUser.save();
 
+    // Send OTP
     await transporter.sendMail({
       from: process.env.EMAIL,
       to: email,
