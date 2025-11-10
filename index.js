@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -7,35 +8,49 @@ const nodemailer = require("nodemailer");
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
+
 dotenv.config();
 const app = express();
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "local-service-project-frontend-git-main-utsav-sahus-projects.vercel.app",
-    ],
-    credentials: true,
-  })
-);
+
+// ------------------- CORS SETUP -------------------
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://local-service-project-frontend-git-main-utsav-sahus-projects.vercel.app"
+];
+
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true); // Postman or server-to-server requests
+    if (!allowedOrigins.includes(origin)) {
+      return callback(new Error("CORS not allowed for this origin"), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+}));
+
+// Handle OPTIONS preflight requests
+app.options("*", cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
+
+// ------------------- MIDDLEWARE -------------------
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-const User = require("./Mongodb/User");
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
-const CustomerAuthRoutes = require("./routes/CustomerAuthRoutes");
-const ServiceAuthRoutes = require("./routes/ServiceAuthRoutes");
-const CustomerRoutes = require("./routes/CustomerRoutes");
-const ServiceRoutes = require("./routes/ServiceRoutes");
-const AdminAuthRoutes = require("./routes/AdminAuthRoutes");
-const AdminRoutes = require("./routes/AdminRoutes");
-
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
+// ------------------- MONGODB -------------------
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected ✅"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
+const User = require("./Mongodb/User");
+
+// ------------------- EMAIL SETUP -------------------
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -44,13 +59,18 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
-// --- AUTH MIDDLEWARE ---
-
+// ------------------- ROUTES -------------------
 app.get("/", (req, res) => {
   res.send("Backend is running ✅");
 });
+
+// --- AUTH ROUTES ---
+const CustomerAuthRoutes = require("./routes/CustomerAuthRoutes");
+const ServiceAuthRoutes = require("./routes/ServiceAuthRoutes");
+const CustomerRoutes = require("./routes/CustomerRoutes");
+const ServiceRoutes = require("./routes/ServiceRoutes");
+const AdminAuthRoutes = require("./routes/AdminAuthRoutes");
+const AdminRoutes = require("./routes/AdminRoutes");
 
 app.use("/customer/auth", CustomerAuthRoutes);
 app.use("/service/auth", ServiceAuthRoutes);
@@ -59,38 +79,35 @@ app.use("/service", ServiceRoutes);
 app.use("/admin/auth", AdminAuthRoutes);
 app.use("/admin", AdminRoutes);
 
+// ------------------- GET CURRENT USER -------------------
 app.get("/me", (req, res) => {
   try {
-    const token = req.cookies.token; // ✅ httpOnly cookie
+    const token = req.cookies.token;
     if (!token) return res.status(401).json({ message: "No token found" });
 
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    res.json({ message: "User data fetched", payload }); // payload me username aur email etc.
+    res.json({ message: "User data fetched", payload });
   } catch (err) {
     res.status(401).json({ message: "Invalid token" });
   }
 });
 
+// ------------------- LOGIN -------------------
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   try {
-    // 🔍 Find user by username or email
     const user = await User.findOne({
       $or: [{ username }, { email: username }],
     });
-    if (!user) {
-      return res.status(400).json({ message: "User not found" });
-    }
-    if (user.block) {
-      return res
-        .status(403)
-        .json({ message: "Your account is blocked. Please contact support." });
-    }
-    // 🔒 Compare password (plain for now)
-    if (user.password !== password) {
-      return res.status(400).json({ message: "Invalid password" });
-    }
-    // ✅ Create JWT token
+
+    if (!user) return res.status(400).json({ message: "User not found" });
+    if (user.block) return res.status(403).json({ message: "Your account is blocked." });
+
+    // ------------------- Password Check -------------------
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(400).json({ message: "Invalid password" });
+
+    // ------------------- JWT TOKEN -------------------
     const token = jwt.sign(
       {
         id: user._id,
@@ -104,14 +121,15 @@ app.post("/login", async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
-    // ✅ Set token in cookie
+
+    // ------------------- Set Cookie -------------------
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // true only in production
+      secure: process.env.NODE_ENV === "production", // true in production
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
-    // ✅ Send success response
+
     return res.status(200).json({
       message: "Login successful!",
       role: user.role,
@@ -125,35 +143,36 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// logout.js or in main server file
+// ------------------- LOGOUT -------------------
 app.post("/logout", (req, res) => {
   res.cookie("token", "", {
     httpOnly: true,
-    expires: new Date(0), // expire immediately
+    expires: new Date(0),
     sameSite: "lax",
-    secure: false, // production me true
+    secure: process.env.NODE_ENV === "production",
   });
   res.json({ message: "Logged out successfully" });
 });
 
+// ------------------- SIGNUP -------------------
 app.post("/signup", async (req, res) => {
   try {
     const { fullName, username, email, password, gender, location } = req.body;
 
-    // Check existing user
     const existingUser = await User.findOne({ email });
-    if (existingUser)
-      return res.status(400).json({ message: "Email already exists" });
+    if (existingUser) return res.status(400).json({ message: "Email already exists" });
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Create user
     const newUser = new User({
       fullName,
       username,
       email,
-      password,
+      password: hashedPassword,
       gender,
       location,
       otp,
@@ -163,7 +182,7 @@ app.post("/signup", async (req, res) => {
 
     await newUser.save();
 
-    // Send OTP mail
+    // Send OTP email
     await transporter.sendMail({
       from: process.env.EMAIL,
       to: email,
@@ -178,6 +197,7 @@ app.post("/signup", async (req, res) => {
   }
 });
 
+// ------------------- VERIFY OTP -------------------
 app.post("/signup/verify-otp", async (req, res) => {
   const { userId, otp } = req.body;
 
@@ -190,7 +210,6 @@ app.post("/signup/verify-otp", async (req, res) => {
       user.otp = null;
       await user.save();
 
-      // Create JWT token
       const token = jwt.sign(
         {
           id: user._id,
@@ -205,7 +224,6 @@ app.post("/signup/verify-otp", async (req, res) => {
         { expiresIn: "1d" }
       );
 
-      // Set token in cookies
       res.cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -234,5 +252,6 @@ app.post("/signup/verify-otp", async (req, res) => {
   }
 });
 
+// ------------------- START SERVER -------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT} ✅`));
