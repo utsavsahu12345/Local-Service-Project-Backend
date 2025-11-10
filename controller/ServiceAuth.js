@@ -113,13 +113,19 @@ const ServiceLogin = async (req, res) => {
       return res.status(403).json({ message: "Access denied. Only service providers can login." });
     }
 
+    // ✅ Check if user is blocked
+    if (user.block) {
+      return res.status(403).json({ message: "Your account is blocked." });
+    }
+
+    // ✅ Password check (plain text)
     if (user.password !== password)
       return res.status(400).json({ message: "Invalid password" });
 
     if (!user.verified)
       return res.status(400).json({ message: "Please verify your email first" });
 
-    // ✅ Generate JWT Token
+    // ✅ Generate JWT Token (include block)
     const token = jwt.sign(
       {
         fullName: user.fullName,
@@ -128,6 +134,7 @@ const ServiceLogin = async (req, res) => {
         gender: user.gender,
         location: user.location,
         role: user.role,
+        block: user.block, // ✅ added block here
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
@@ -141,7 +148,7 @@ const ServiceLogin = async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send Response
+    // ✅ Send Response (include block)
     res.json({
       message: "Login successful",
       user: {
@@ -151,6 +158,7 @@ const ServiceLogin = async (req, res) => {
         gender: user.gender,
         location: user.location,
         role: user.role,
+        block: user.block, // ✅ include block in response
       },
       token,
     });

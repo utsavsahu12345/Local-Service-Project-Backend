@@ -7,19 +7,25 @@ const CustomerLogin = async (req, res) => {
     const user = await User.findOne({
       $or: [{ username }, { email: username }],
     });
+
     if (!user) return res.status(400).json({ message: "User not found" });
-    // ✅ Role check
+
+    // ✅ Role check — only customers
     if (user.role !== "Customer") {
       return res.status(403).json({ message: "Access denied. Only customers can login." });
     }
 
+    // ✅ Check if user is blocked
+    if (user.block) return res.status(403).json({ message: "Your account is blocked." });
+
+    // ✅ Password check (plain text)
     if (user.password !== password)
       return res.status(400).json({ message: "Invalid password" });
 
     if (!user.verified)
       return res.status(400).json({ message: "Please verify your email first" });
 
-    // ✅ Create JWT Token
+    // ✅ Create JWT Token (include block)
     const token = jwt.sign(
       {
         fullName: user.fullName,
@@ -28,6 +34,7 @@ const CustomerLogin = async (req, res) => {
         gender: user.gender,
         location: user.location,
         role: user.role,
+        block: user.block, // ✅ added block
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
@@ -41,7 +48,7 @@ const CustomerLogin = async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Response
+    // ✅ Send Response (include block)
     res.json({
       message: "Login successful",
       user: {
@@ -51,6 +58,7 @@ const CustomerLogin = async (req, res) => {
         gender: user.gender,
         location: user.location,
         role: user.role,
+        block: user.block, // ✅ include block
       },
       token,
     });
