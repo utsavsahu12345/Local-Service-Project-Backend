@@ -12,7 +12,8 @@ const app = express();
 app.use(
   cors({
     origin: [
-      "http://localhost:5173","local-service-project-frontend-git-main-utsav-sahus-projects.vercel.app"
+      "http://localhost:5173",
+      "local-service-project-frontend-git-main-utsav-sahus-projects.vercel.app",
     ],
     credentials: true,
   })
@@ -23,8 +24,8 @@ app.use(cookieParser());
 
 const User = require("./Mongodb/User");
 
-const CustomerAuthRoutes = require('./routes/CustomerAuthRoutes');
-const ServiceAuthRoutes = require('./routes/ServiceAuthRoutes');
+const CustomerAuthRoutes = require("./routes/CustomerAuthRoutes");
+const ServiceAuthRoutes = require("./routes/ServiceAuthRoutes");
 const CustomerRoutes = require("./routes/CustomerRoutes");
 const ServiceRoutes = require("./routes/ServiceRoutes");
 const AdminAuthRoutes = require("./routes/AdminAuthRoutes");
@@ -51,12 +52,12 @@ app.get("/", (req, res) => {
   res.send("Backend is running ✅");
 });
 
-app.use('/customer/auth', CustomerAuthRoutes);
-app.use('/service/auth', ServiceAuthRoutes);
-app.use('/customer', CustomerRoutes);
-app.use('/service', ServiceRoutes);
-app.use('/admin/auth', AdminAuthRoutes);
-app.use('/admin', AdminRoutes);
+app.use("/customer/auth", CustomerAuthRoutes);
+app.use("/service/auth", ServiceAuthRoutes);
+app.use("/customer", CustomerRoutes);
+app.use("/service", ServiceRoutes);
+app.use("/admin/auth", AdminAuthRoutes);
+app.use("/admin", AdminRoutes);
 
 app.get("/me", (req, res) => {
   try {
@@ -71,7 +72,7 @@ app.get("/me", (req, res) => {
 });
 
 app.post("/login", async (req, res) => {
-  const { username, password } = req.body;  
+  const { username, password } = req.body;
   try {
     // 🔍 Find user by username or email
     const user = await User.findOne({
