@@ -18,23 +18,17 @@ const allowedOrigins = [
   "https://local-service-project-frontend-git-main-utsav-sahus-projects.vercel.app"
 ];
 
+// Global CORS middleware (handles preflight OPTIONS automatically)
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin) return callback(null, true); // Postman or server-to-server requests
+    if (!origin) return callback(null, true); // Postman / server-to-server requests
     if (!allowedOrigins.includes(origin)) {
       return callback(new Error("CORS not allowed for this origin"), false);
     }
     return callback(null, true);
   },
-  credentials: true,
-}));
-
-// Handle OPTIONS preflight requests
-app.options("/*", cors({
-  origin: allowedOrigins,
   credentials: true
 }));
-
 
 // ------------------- MIDDLEWARE -------------------
 app.use(express.json({ limit: "10mb" }));
@@ -126,7 +120,7 @@ app.post("/login", async (req, res) => {
     // ------------------- Set Cookie -------------------
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // true in production
+      secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
