@@ -3,11 +3,9 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const multer = require("multer");
-const nodemailer = require("nodemailer");
-const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 
 dotenv.config();
 const app = express();
@@ -24,15 +22,10 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
-
 // ------------------- MONGODB -------------------
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected ✅"))
   .catch((err) => console.error("MongoDB connection error:", err));
-
-const User = require("./Mongodb/User");
 
 // ------------------- EMAIL SETUP -------------------
 const transporter = nodemailer.createTransport({
@@ -49,18 +42,14 @@ app.get("/", (req, res) => {
 });
 
 // --- AUTH ROUTES ---
-const CustomerAuthRoutes = require("./routes/CustomerAuthRoutes");
-const ServiceAuthRoutes = require("./routes/ServiceAuthRoutes");
+const AuthRoutes = require("./routes/AuthRoutes");
 const CustomerRoutes = require("./routes/CustomerRoutes");
 const ServiceRoutes = require("./routes/ServiceRoutes");
-const AdminAuthRoutes = require("./routes/AdminAuthRoutes");
 const AdminRoutes = require("./routes/AdminRoutes");
 
-app.use("/customer/auth", CustomerAuthRoutes);
-app.use("/service/auth", ServiceAuthRoutes);
+app.use("/user", AuthRoutes);
 app.use("/customer", CustomerRoutes);
 app.use("/service", ServiceRoutes);
-app.use("/admin/auth", AdminAuthRoutes);
 app.use("/admin", AdminRoutes);
 
 // ------------------- GET CURRENT USER -------------------
@@ -76,55 +65,6 @@ app.get("/me", (req, res) => {
   }
 });
 
-app.post("/login", async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const user = await User.findOne({
-      $or: [{ username }, { email: username }],
-    });
-
-    if (!user) return res.status(400).json({ message: "User not found" });
-    if (user.block) return res.status(403).json({ message: "Your account is blocked." });
-
-    // Compare plain text password
-    if (user.password !== password) {
-      return res.status(400).json({ message: "Invalid password" });
-    }
-
-    const token = jwt.sign(
-      {
-        id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        username: user.username,
-        gender: user.gender,
-        location: user.location,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
-
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-    });
-
-    return res.status(200).json({
-      message: "Login successful!",
-      role: user.role,
-      username: user.username,
-      fullName: user.fullName,
-      email: user.email,
-    });
-  } catch (err) {
-    console.error("Login error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
 // ------------------- LOGOUT -------------------
 app.post("/logout", (req, res) => {
   res.cookie("token", "", {
@@ -134,100 +74,6 @@ app.post("/logout", (req, res) => {
     secure: process.env.NODE_ENV === "production",
   });
   res.json({ message: "Logged out successfully" });
-});
-
-// ------------------- SIGNUP -------------------
-app.post("/signup", async (req, res) => {
-  try {
-    const { fullName, username, email, password, gender, location } = req.body;
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: "Email already exists" });
-
-    // No bcrypt hash
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    const newUser = new User({
-      fullName,
-      username,
-      email,
-      password,   // <-- store as plain text
-      gender,
-      location,
-      otp,
-      verified: false,
-      role: "Customer",
-    });
-
-    await newUser.save();
-
-    // Send OTP
-    await transporter.sendMail({
-      from: process.env.EMAIL,
-      to: email,
-      subject: "Email Verification OTP",
-      text: `Your OTP is: ${otp}`,
-    });
-
-    res.json({ message: "OTP sent to email", userId: newUser._id });
-  } catch (error) {
-    console.error("Signup Error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// ------------------- VERIFY OTP -------------------
-app.post("/signup/verify-otp", async (req, res) => {
-  const { userId, otp } = req.body;
-  try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(400).json({ message: "User not found" });
-
-    if (user.otp === otp) {
-      user.verified = true;
-      user.otp = null;
-      await user.save();
-
-      const token = jwt.sign(
-        {
-          id: user._id,
-          fullName: user.fullName,
-          username: user.username,
-          email: user.email,
-          gender: user.gender,
-          location: user.location,
-          role: user.role,
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: "1d" }
-      );
-
-      res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        maxAge: 24 * 60 * 60 * 1000,
-      });
-
-      res.json({
-        message: "Email verified successfully",
-        user: {
-          fullName: user.fullName,
-          username: user.username,
-          email: user.email,
-          gender: user.gender,
-          location: user.location,
-          role: user.role,
-        },
-        token,
-      });
-    } else {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-  } catch (err) {
-    console.error("OTP Verify Error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
 // ------------------- START SERVER -------------------

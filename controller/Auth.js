@@ -1,7 +1,17 @@
 const jwt = require('jsonwebtoken');
 const User = require('../Mongodb/User');
+const nodemailer = require("nodemailer");
 
-const CustomerLogin = async (req, res) => {
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL,
+    pass: process.env.EMAIL_PASSWORD,
+  },
+});
+
+// app.post("/login", 
+const Login = async (req, res) => {
   const { username, password } = req.body;
   try {
     const user = await User.findOne({
@@ -9,38 +19,27 @@ const CustomerLogin = async (req, res) => {
     });
 
     if (!user) return res.status(400).json({ message: "User not found" });
-
-    // ✅ Role check — only customers
-    if (user.role !== "Customer") {
-      return res.status(403).json({ message: "Access denied. Only customers can login." });
-    }
-
-    // ✅ Check if user is blocked
     if (user.block) return res.status(403).json({ message: "Your account is blocked." });
 
-    // ✅ Password check (plain text)
-    if (user.password !== password)
+    // Compare plain text password
+    if (user.password !== password) {
       return res.status(400).json({ message: "Invalid password" });
+    }
 
-    if (!user.verified)
-      return res.status(400).json({ message: "Please verify your email first" });
-
-    // ✅ Create JWT Token (include block)
     const token = jwt.sign(
       {
+        id: user._id,
         fullName: user.fullName,
         email: user.email,
         username: user.username,
         gender: user.gender,
         location: user.location,
         role: user.role,
-        block: user.block, // ✅ added block
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -48,62 +47,60 @@ const CustomerLogin = async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send Response (include block)
-    res.json({
-      message: "Login successful",
-      user: {
-        fullName: user.fullName,
-        username: user.username,
-        email: user.email,
-        gender: user.gender,
-        location: user.location,
-        role: user.role,
-        block: user.block, // ✅ include block
-      },
-      token,
+    return res.status(200).json({
+      message: "Login successful!",
+      role: user.role,
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Login error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
-// app.post("/customer/auth/signup", 
-const CustomerSignup = async (req, res) => {
-  const { fullName, username, email, password, gender, location } = req.body;
+// app.post("/signup", 
+const Signup = async (req, res) => {
+  try {
+    const { fullName, username, email, password, gender, location, role } = req.body;
 
-  const existingUser = await User.findOne({ email });
-  if (existingUser)
-    return res.status(400).json({ message: "Email already exists" });
+    const existingUser = await User.findOne({ email });
+    if (existingUser) return res.status(400).json({ message: "Email already exists" });
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  const newUser = new User({
-    fullName,
-    username,
-    email,
-    password,
-    gender,
-    location,
-    otp,
-  });
+    const newUser = new User({
+      fullName,
+      username,
+      email,
+      password, // plain text (you can later hash it)
+      gender,
+      location,
+      otp,
+      verified: false,
+      role,
+    });
 
-  await newUser.save();
+    await newUser.save();
 
-  await transporter.sendMail({
-    from: process.env.EMAIL,
-    to: email,
-    subject: "Email Verification OTP",
-    text: `Your OTP is: ${otp}`,
-  });
+    await transporter.sendMail({
+      from: process.env.EMAIL,
+      to: email,
+      subject: "Email Verification OTP",
+      text: `Your OTP is: ${otp}`,
+    });
 
-  res.json({ message: "OTP sent to email", userId: newUser._id });
+    res.json({ message: "OTP sent to email", userId: newUser._id });
+  } catch (error) {
+    console.error("Signup Error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
 };
 
-
-// Verify OTP route
-// app.post("/customer/auth/verify-otp", 
-const CustomerVerifyOTP = async (req, res) => {
+// ------------------- VERIFY OTP -------------------
+// app.post("/signup/verify-otp", 
+const SignupVerify = async (req, res) => {
   const { userId, otp } = req.body;
   try {
     const user = await User.findById(userId);
@@ -114,12 +111,12 @@ const CustomerVerifyOTP = async (req, res) => {
       user.otp = null;
       await user.save();
 
-      // Include gender & location in JWT
       const token = jwt.sign(
         {
+          id: user._id,
           fullName: user.fullName,
-          email: user.email,
           username: user.username,
+          email: user.email,
           gender: user.gender,
           location: user.location,
           role: user.role,
@@ -151,10 +148,10 @@ const CustomerVerifyOTP = async (req, res) => {
       return res.status(400).json({ message: "Invalid OTP" });
     }
   } catch (err) {
-    console.error(err);
+    console.error("OTP Verify Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
 
-module.exports = { CustomerLogin, CustomerSignup, CustomerVerifyOTP};
+module.exports = { Login, Signup, SignupVerify };
